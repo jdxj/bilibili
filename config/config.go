@@ -17,6 +17,9 @@ config file
     "cookies": []
   }
 }
+
+crontab
+0 8 * * * cd /root/bilibili && ./bilibili.out
 */
 
 var Cfg *Config
