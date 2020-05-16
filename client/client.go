@@ -14,6 +14,7 @@ import (
 
 const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.129 Safari/537.36"
 const Domain = ".bilibili.com"
+const LoginAPI = "https://api.bilibili.com/x/web-interface/nav"
 
 func NewClient(config *config.Cookie) *Client {
 	URL, err := url.Parse(config.Domain)
@@ -72,8 +73,7 @@ func (c *Client) changeCookies(cookie string) {
 func (c *Client) verifyLogin() int {
 	hc := c.hClient
 
-	api := "https://api.bilibili.com/x/web-interface/nav"
-	req := newRequestUserAgent(api)
+	req := newRequestUserAgent(LoginAPI)
 	resp, err := hc.Do(req)
 	if err != nil {
 		email.Log("verifyLogin-http client do error: %s", err)
@@ -112,7 +112,7 @@ func (c *Client) sign() {
 		email.Log("sign-http do error: %s", err)
 		return
 	}
-	defer resp.Body.Close()
+	resp.Body.Close()
 }
 
 func parseCookies(cookies string) []*http.Cookie {
