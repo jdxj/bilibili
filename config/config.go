@@ -12,10 +12,12 @@ config file
     "user": "985759262@qq.com",
     "password": ""
   },
-  "cookie": {
-    "domain": "https://www.bilibili.com",
-    "cookies": []
-  }
+  "cookies": [
+    {
+      "recipient": "985759262@qq.com",
+      "values": ""
+    }
+  ]
 }
 
 crontab
