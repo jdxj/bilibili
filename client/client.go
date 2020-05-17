@@ -152,6 +152,7 @@ func (c *Client) mulAlreadySign() bool {
 	format := "已经执行了签到程序并进行了硬币数量检测, 但仍未检测到硬币更新, 可能是B站还未统计. 请手动查看硬币获取记录: %s"
 	addr := "https://account.bilibili.com/account/coin"
 	notifier.SignLog(format, addr)
+	email.Log("sign fail, addr: %v", notifier.To())
 	return false
 }
 
@@ -198,7 +199,6 @@ func (c *Client) alreadySign() bool {
 		curDate.Month() != now.Month() &&
 		curDate.Day() != now.Day() {
 
-		email.Log("alreadySign-sign fail")
 		return false
 	}
 	return true

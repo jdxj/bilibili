@@ -61,6 +61,10 @@ func (e *Email) AddRecipients(recipients ...string) {
 	}
 }
 
+func (e *Email) To() []string {
+	return e.jEmail.To
+}
+
 func (e *Email) ResetRecipients() {
 	e.recipients = nil
 	e.jEmail.To = nil
