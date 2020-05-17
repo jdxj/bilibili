@@ -6,9 +6,17 @@ import (
 )
 
 func TestReadConfig(t *testing.T) {
-	config := Cfg
-
-	fmt.Printf("%#v\n", *config)
+	config := readConfig("../config.json")
 	fmt.Printf("%#v\n", *config.Email)
-	fmt.Printf("%#v\n", *config.Cookie)
+	for _, v := range config.Cookies {
+		fmt.Printf("%#v\n", *v)
+	}
+}
+
+func TestStructCopy(t *testing.T) {
+	c1 := &Cookie{}
+	c2 := *c1
+
+	fmt.Printf("%p\n", c1)
+	fmt.Printf("%p\n", &c2)
 }

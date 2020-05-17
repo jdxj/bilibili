@@ -14,18 +14,20 @@ const SMTPAddr = "smtp.qq.com:587"
 var log *Email
 
 func init() {
-	log = NewEmail(config.Cfg.Email)
+	emailConfig := config.GetEmail()
+	log = NewEmail()
+	log.AddRecipients(emailConfig.User)
 }
 
-func NewEmail(config *config.Email) *Email {
-	jEmail := email.NewEmail()
-	jEmail.From = fmt.Sprintf("bilibili <%s>", config.User)
-	jEmail.To = []string{config.User}
+func NewEmail() *Email {
+	emailConfig := config.GetEmail()
 
-	auth := smtp.PlainAuth("", config.User, config.Password, SMTPHost)
+	jEmail := email.NewEmail()
+	jEmail.From = fmt.Sprintf("bilibili <%s>", emailConfig.User)
+
+	auth := smtp.PlainAuth("", emailConfig.User, emailConfig.Password, SMTPHost)
 
 	e := &Email{
-		config: config,
 		auth:   auth,
 		jEmail: jEmail,
 	}
@@ -33,12 +35,43 @@ func NewEmail(config *config.Email) *Email {
 }
 
 type Email struct {
-	config *config.Email
 	auth   smtp.Auth
 	jEmail *email.Email
+
+	recipients map[string]struct{}
 }
 
-func (e *Email) Log(format string, a ...interface{}) {
+func (e *Email) AddRecipients(recipients ...string) {
+	if e.recipients == nil {
+		e.recipients = make(map[string]struct{})
+	}
+
+	for _, v := range recipients {
+		if v == "" {
+			continue
+		}
+
+		e.recipients[v] = struct{}{}
+	}
+
+	je := e.jEmail
+	je.To = nil
+	for addr := range e.recipients {
+		je.To = append(je.To, addr)
+	}
+}
+
+func (e *Email) ResetRecipients() {
+	e.recipients = nil
+	e.jEmail.To = nil
+}
+
+func (e *Email) RunLog(format string, a ...interface{}) {
+	log := fmt.Sprintf(format, a...)
+	e.send("bilibili run log", log)
+}
+
+func (e *Email) SignLog(format string, a ...interface{}) {
 	log := fmt.Sprintf(format, a...)
 	e.send("bilibili sign log", log)
 }
@@ -52,5 +85,5 @@ func (e *Email) send(subject, text string) {
 }
 
 func Log(format string, a ...interface{}) {
-	log.Log(format, a...)
+	log.RunLog(format, a...)
 }

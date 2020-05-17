@@ -2,61 +2,78 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"time"
+
+	"github.com/jdxj/bilibili/config"
 
 	"github.com/jdxj/bilibili/modules"
 
-	"github.com/jdxj/bilibili/config"
 	"github.com/jdxj/bilibili/email"
 )
 
-const UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.129 Safari/537.36"
-const Domain = ".bilibili.com"
-const LoginAPI = "https://api.bilibili.com/x/web-interface/nav"
+const (
+	UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.129 Safari/537.36"
 
-func NewClient(config *config.Cookie) *Client {
-	URL, err := url.Parse(config.Domain)
-	if err != nil {
-		email.Log("new client-url parse error: %s", err)
-		panic(err)
-	}
+	Domain   = ".bilibili.com"
+	LoginAPI = "https://api.bilibili.com/x/web-interface/nav"
+	SignAPI  = "https://api.bilibili.com/x/member/web/coin/log?jsonp=jsonp"
+	CoinAPI  = "https://account.bilibili.com/site/getCoin"
+	WebSite  = "https://www.bilibili.com"
+
+	TimeLayout = "2006-01-02 15:04:05"
+)
+
+var (
+	notifier *email.Email
+)
+
+func init() {
+	notifier = email.NewEmail()
+}
+
+func NewClient() *Client {
+	target, _ := url.Parse(WebSite)
 
 	client := &Client{
-		config:  config,
-		url:     URL,
+		url:     target,
 		hClient: &http.Client{},
 	}
 	return client
 }
 
 type Client struct {
-	config  *config.Cookie
 	url     *url.URL
 	hClient *http.Client
+
+	jars []http.CookieJar
 }
 
 func (c *Client) Start() {
-	cfg := c.config
+	cookiesConfig := config.GetCookies()
+	for _, cookie := range cookiesConfig {
+		notifier.ResetRecipients()
+		notifier.AddRecipients(cookie.Recipient)
 
-	for _, v := range cfg.Cookies {
-		// 1
-		c.changeCookies(v)
-		// 2
-		money := c.verifyLogin()
-		if money < 0 {
+		c.changeCookies(cookie.Values)
+		if !c.verifyLogin() {
 			continue
 		}
-		// 3
 		c.sign()
-		email.Log("sign ok, money: %d", money)
+
+		if !c.mulAlreadySign() {
+			continue
+		}
+		c.sendCoinNum()
 	}
 }
 
+// 0. 装载 cookie
 func (c *Client) changeCookies(cookie string) {
 	hc := c.hClient
-	hc.Jar = nil // 清除上一个 cookies
 
 	// 解析新 cookies 并生成新 jar
 	cookies := parseCookies(cookie)
@@ -67,17 +84,18 @@ func (c *Client) changeCookies(cookie string) {
 	jar.SetCookies(c.url, cookies)
 
 	hc.Jar = jar
+	c.jars = append(c.jars, jar)
 }
 
 // 1. 验证登陆
-func (c *Client) verifyLogin() int {
+func (c *Client) verifyLogin() bool {
 	hc := c.hClient
 
 	req := newRequestUserAgent(LoginAPI)
 	resp, err := hc.Do(req)
 	if err != nil {
 		email.Log("verifyLogin-http client do error: %s", err)
-		return -1
+		return false
 	}
 	defer resp.Body.Close()
 
@@ -85,34 +103,148 @@ func (c *Client) verifyLogin() int {
 	decoder := json.NewDecoder(resp.Body)
 	if err := decoder.Decode(apiResp); err != nil {
 		email.Log("verifyLogin-api resp decode error: %s", err)
-		return -1
+		return false
 	}
 
 	if apiResp.TTL == 0 {
 		email.Log("verifyLogin-api resp ttl error: %d", apiResp.TTL)
-		return -1
+		return false
 	}
 
 	loginInfo := &modules.LoginInfo{}
 	if err := json.Unmarshal(apiResp.Data, loginInfo); err != nil {
 		email.Log("verifyLogin-login info unmarshal error: %d", err)
-		return -1
+		return false
 	}
-	return loginInfo.Money
+	return true
 }
 
 // 2. 签到
 func (c *Client) sign() {
 	hc := c.hClient
-	cfg := c.config
 
-	req := newRequestUserAgent(cfg.Domain)
+	req := newRequestUserAgent(WebSite)
 	resp, err := hc.Do(req)
 	if err != nil {
 		email.Log("sign-http do error: %s", err)
 		return
 	}
 	resp.Body.Close()
+}
+
+func (c *Client) mulAlreadySign() bool {
+	num := 10                                 // 重试10次
+	ticker := time.NewTicker(5 * time.Second) // 间隔 5s
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
+		if c.alreadySign() {
+			return true
+		}
+
+		num--
+		if num <= 0 {
+			break
+		}
+	}
+
+	format := "已经执行了签到程序并进行了硬币数量检测, 但仍未检测到硬币更新, 可能是B站还未统计. 请手动查看硬币获取记录: %s"
+	addr := "https://account.bilibili.com/account/coin"
+	notifier.SignLog(format, addr)
+	return false
+}
+
+// 3. 检查是否已获得
+func (c *Client) alreadySign() bool {
+	hc := c.hClient
+
+	req := newRequestUserAgent(SignAPI)
+	resp, err := hc.Do(req)
+	if err != nil {
+		email.Log("alreadySign-hc.Do error: %s", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	apiResp := &modules.APIResponse{}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(apiResp); err != nil {
+		email.Log("alreadySign-decoder.Decode1 error: %s", err)
+		return false
+	}
+
+	if apiResp.TTL == 0 {
+		email.Log("alreadySign-api resp ttl error: %d", apiResp.TTL)
+		return false
+	}
+
+	signInfo := &modules.SignInfo{}
+	if err := json.Unmarshal(apiResp.Data, signInfo); err != nil {
+		email.Log("alreadySign-unmarshal signInfo error: %s", err)
+		return false
+	}
+
+	if len(signInfo.List) <= 0 {
+		email.Log("alreadySign-can not get sign log: %d", signInfo.Count)
+		return false
+	}
+
+	signEntry := signInfo.List[0]
+	curDate, _ := time.Parse(TimeLayout, signEntry.Time)
+	now := time.Now()
+
+	if curDate.Year() != now.Year() &&
+		curDate.Month() != now.Month() &&
+		curDate.Day() != now.Day() {
+
+		email.Log("alreadySign-sign fail")
+		return false
+	}
+	return true
+}
+
+// 4. 保存 cookie, 可能会有用
+func (c *Client) SaveCookies() {
+	for i, v := range c.jars {
+		cookies := v.Cookies(c.url)
+		fmt.Printf("%02d--------", i)
+		for _, vv := range cookies {
+			fmt.Printf("%s\n", vv)
+		}
+	}
+}
+
+func (c *Client) sendCoinNum() {
+	hc := c.hClient
+
+	req := newRequestUserAgent(CoinAPI)
+	resp, err := hc.Do(req)
+	if err != nil {
+		email.Log("sendCoinNum-hc.Do error: %s", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	apiResp := &modules.APIResponse{}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(apiResp); err != nil {
+		email.Log("sendCoinNum-decoder.Decode1 error: %s", err)
+		return
+	}
+
+	if !apiResp.Status {
+		email.Log("sendCoinNum-api resp status error: %v", apiResp.Status)
+		return
+	}
+
+	coinInfo := &modules.CoinInfo{}
+	if err := json.Unmarshal(apiResp.Data, coinInfo); err != nil {
+		email.Log("sendCoinNum-unmarshal coinInfo error: %s", err)
+		return
+	}
+
+	notifier.SignLog("sign success, money: %d", coinInfo.Money)
 }
 
 func parseCookies(cookies string) []*http.Cookie {

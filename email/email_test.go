@@ -9,5 +9,5 @@ import (
 func TestNewEmail(t *testing.T) {
 	configFile := config.Cfg
 	e := NewEmail(configFile.Email)
-	e.Log("error when: %s", "send abc")
+	e.RunLog("error when: %s", "send abc")
 }

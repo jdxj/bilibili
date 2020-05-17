@@ -22,15 +22,17 @@ crontab
 0 8 * * * cd /root/bilibili && ./bilibili.out
 */
 
-var Cfg *Config
+var (
+	cfg *Config
+)
 
 func init() {
-	Cfg = readConfig("./config.json")
+	cfg = readConfig("./config.json")
 }
 
 type Config struct {
-	Email  *Email  `json:"email"`
-	Cookie *Cookie `json:"cookie"`
+	Email   *Email    `json:"email"`
+	Cookies []*Cookie `json:"cookies"`
 }
 
 type Email struct {
@@ -39,8 +41,8 @@ type Email struct {
 }
 
 type Cookie struct {
-	Domain  string   `json:"domain"`
-	Cookies []string `json:"cookies"`
+	Recipient string `json:"recipient"`
+	Values    string `json:"values"`
 }
 
 func readConfig(path string) *Config {
@@ -56,4 +58,16 @@ func readConfig(path string) *Config {
 		panic(err)
 	}
 	return config
+}
+
+func GetEmail() Email {
+	return *cfg.Email
+}
+
+func GetCookies() []Cookie {
+	var result []Cookie
+	for _, v := range cfg.Cookies {
+		result = append(result, *v)
+	}
+	return result
 }
