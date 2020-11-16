@@ -1,75 +1,53 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
+
+	"gopkg.in/yaml.v2"
 )
-
-/*
-config file
-{
-  "email": {
-    "user": "985759262@qq.com",
-    "password": ""
-  },
-  "cookies": [
-    {
-      "recipient": "985759262@qq.com",
-      "values": ""
-    }
-  ]
-}
-
-crontab
-0 8 * * * cd /root/bilibili && ./bilibili.out
-*/
 
 var (
 	cfg *Config
 )
 
 func init() {
-	cfg = readConfig("./config.json")
-}
-
-type Config struct {
-	Email   *Email    `json:"email"`
-	Cookies []*Cookie `json:"cookies"`
-}
-
-type Email struct {
-	User     string `json:"user"`
-	Password string `json:"password"`
-}
-
-type Cookie struct {
-	Recipient string `json:"recipient"`
-	Values    string `json:"values"`
-}
-
-func readConfig(path string) *Config {
-	file, err := os.Open(path)
+	err := readConfig("./config.yaml")
 	if err != nil {
 		panic(err)
 	}
+}
+
+type Config struct {
+	Email *Email  `yaml:"email"`
+	Users []*User `yaml:"users"`
+}
+
+type Email struct {
+	User  string `yaml:"user"`
+	Token string `yaml:"token"`
+}
+
+type User struct {
+	Email  string `yaml:"email"`
+	Cookie string `yaml:"cookie"`
+}
+
+func readConfig(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
 	defer file.Close()
 
-	config := &Config{}
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(config); err != nil {
-		panic(err)
-	}
-	return config
+	cfg = new(Config)
+	decoder := yaml.NewDecoder(file)
+	return decoder.Decode(cfg)
 }
 
-func GetEmail() Email {
-	return *cfg.Email
+func GetEmail() *Email {
+	return cfg.Email
 }
 
-func GetCookies() []Cookie {
-	var result []Cookie
-	for _, v := range cfg.Cookies {
-		result = append(result, *v)
-	}
-	return result
+func GetUsers() []*User {
+	return cfg.Users
 }
