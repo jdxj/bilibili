@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -21,7 +22,7 @@ const (
 	APICoin  = "https://account.bilibili.com/site/getCoin"
 )
 
-func NewBiliBili(cookie string) (*BiliBili, error) {
+func NewBiliBili(id, cookie string) (*BiliBili, error) {
 	u, _ := url.Parse(Home)
 	cookies := utils.StringToCookies(Domain, cookie)
 
@@ -32,7 +33,8 @@ func NewBiliBili(cookie string) (*BiliBili, error) {
 	client.Jar = jar
 
 	b := &BiliBili{
-		c: client,
+		id: id,
+		c:  client,
 	}
 
 	err := b.login()
@@ -43,7 +45,8 @@ func NewBiliBili(cookie string) (*BiliBili, error) {
 }
 
 type BiliBili struct {
-	c *http.Client
+	id string
+	c  *http.Client
 
 	li *LoginInfo
 	si *SignInfo
@@ -77,7 +80,7 @@ func (b *BiliBili) login() error {
 		return err
 	}
 	if ar.Code != 0 {
-		return fmt.Errorf("%#v", *ar)
+		return fmt.Errorf("id: %s, %#v", b.id, *ar)
 	}
 
 	b.li, err = ar.LoginInfo()
@@ -94,30 +97,27 @@ func (b *BiliBili) sign() error {
 }
 
 func (b *BiliBili) tryCheckSign() error {
-	err := b.checkSign()
-	if err == nil {
-		return nil
-	}
-
 	dur := time.Second
 	timer := time.NewTimer(dur)
 	defer timer.Stop()
 
-	for {
+	// 最多等待 31s
+	for i := 0; i < 5; i++ {
 		select {
 		case <-timer.C:
-			if err := b.checkSign(); err == nil {
+			err := b.checkSign()
+			if err == nil {
 				return nil
 			}
 
+			log.Printf("id: %s, num: %d, try check sign: %s\n",
+				b.id, i, err)
 			dur = dur * 2
 			timer.Reset(dur)
 		}
-
-		if dur >= 8 {
-			return fmt.Errorf("stop retry check sign")
-		}
 	}
+
+	return fmt.Errorf("id: %s, stop retry check sign", b.id)
 }
 
 func (b *BiliBili) checkSign() error {
@@ -133,7 +133,7 @@ func (b *BiliBili) checkSign() error {
 		return err
 	}
 	if ar.Code != 0 {
-		return fmt.Errorf("%#v", *ar)
+		return fmt.Errorf("id: %s, %#v", b.id, *ar)
 	}
 
 	b.si, err = ar.SignInfo()
@@ -142,7 +142,7 @@ func (b *BiliBili) checkSign() error {
 	}
 
 	if b.si.Count <= 0 {
-		return fmt.Errorf("there has never been sign")
+		return fmt.Errorf("id: %s, there has never been sign: %#v", b.id, *b.si)
 	}
 
 	se := b.si.List[0]
@@ -151,7 +151,7 @@ func (b *BiliBili) checkSign() error {
 	if signDate.Year() != now.Year() ||
 		signDate.Month() != now.Month() ||
 		signDate.Day() != now.Day() {
-		return fmt.Errorf("sign failed")
+		return fmt.Errorf("id: %s, sign failed", b.id)
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func (b *BiliBili) coins() (int, error) {
 		return -1, err
 	}
 	if ar.Code != 0 {
-		return -1, fmt.Errorf("get coin info failed")
+		return -1, fmt.Errorf("id: %s, get coin info failed", b.id)
 	}
 
 	b.ci, err = ar.CoinInfo()

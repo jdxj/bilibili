@@ -16,7 +16,7 @@ func main() {
 	users := config.GetUsers()
 
 	for i, user := range users {
-		b, err := models.NewBiliBili(user.Cookie)
+		b, err := models.NewBiliBili(user.Email, user.Cookie)
 		if err != nil {
 			log.Printf("i: %d, err: %s\n", i, err)
 			return
