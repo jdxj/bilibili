@@ -133,7 +133,7 @@ func (b *BiliBili) checkSign() error {
 		return err
 	}
 	if ar.Code != 0 {
-		return fmt.Errorf("id: %s, %#v", b.id, *ar)
+		return fmt.Errorf("%#v", *ar)
 	}
 
 	b.si, err = ar.SignInfo()
@@ -142,7 +142,7 @@ func (b *BiliBili) checkSign() error {
 	}
 
 	if b.si.Count <= 0 {
-		return fmt.Errorf("id: %s, there has never been sign: %#v", b.id, *b.si)
+		return fmt.Errorf("there has never been sign: %#v", *b.si)
 	}
 
 	se := b.si.List[0]
@@ -151,7 +151,7 @@ func (b *BiliBili) checkSign() error {
 	if signDate.Year() != now.Year() ||
 		signDate.Month() != now.Month() ||
 		signDate.Day() != now.Day() {
-		return fmt.Errorf("id: %s, sign failed", b.id)
+		return fmt.Errorf("sign failed")
 	}
 	return nil
 }
